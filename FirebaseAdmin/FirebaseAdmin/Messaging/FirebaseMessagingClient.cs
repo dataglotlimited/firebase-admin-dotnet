@@ -38,6 +38,8 @@ namespace FirebaseAdmin.Messaging
         private const string FcmSendUrl = FcmBaseUrl + "/v1/projects/{0}/messages:send";
         private const string FcmBatchUrl = FcmBaseUrl + "/batch";
 
+        private const string FcmErrorType = "type.googleapis.com/google.firebase.fcm.v1.FcmError";
+
         private readonly ConfigurableHttpClient httpClient;
         private readonly string sendUrl;
         private readonly string restPath;
@@ -105,10 +107,7 @@ namespace FirebaseAdmin.Messaging
                 var json = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
                 if (!response.IsSuccessStatusCode)
                 {
-                    var error = "Response status code does not indicate success: "
-                            + $"{(int)response.StatusCode} ({response.StatusCode})"
-                            + $"{Environment.NewLine}{json}";
-                    throw new FirebaseException(error);
+                    this.HandleErrorResponse(json, response);
                 }
 
                 var parsed = JsonConvert.DeserializeObject<SingleMessageResponse>(json);
@@ -116,7 +115,7 @@ namespace FirebaseAdmin.Messaging
             }
             catch (HttpRequestException e)
             {
-                throw new FirebaseException("Error while calling the FCM service.", e);
+                throw e.ToFirebaseException("Error while calling the FCM service.");
             }
         }
 
@@ -168,6 +167,7 @@ namespace FirebaseAdmin.Messaging
         private static void AddCommonHeaders(HttpRequestMessage request)
         {
             request.Headers.Add("X-Firebase-Client", ClientVersion);
+            request.Headers.Add("X-GOOG-API-FORMAT-VERSION", "2");
         }
 
         private static FirebaseException CreateExceptionFor(RequestError requestError)
@@ -238,6 +238,24 @@ namespace FirebaseAdmin.Messaging
             return batch;
         }
 
+        private void HandleErrorResponse(string json, HttpResponseMessage response)
+        {
+            try
+            {
+                var parsed = JsonConvert.DeserializeObject<FcmErrorResponse>(json);
+                var code = ErrorCodeUtils.FromString(parsed.Code);
+                throw new FirebaseException(
+                    code,
+                    $"Error while invoking FCM service: {parsed.Message}",
+                    response: response);
+            }
+            catch (Exception e) when (e.GetType() != typeof(FirebaseException))
+            {
+                throw new FirebaseException(
+                    ErrorCode.Unknown, $"Unexpected response: {json}", response: response);
+            }
+        }
+
         /// <summary>
         /// Represents the envelope message accepted by the FCM backend service, including the message
         /// payload and other options like <c>validate_only</c>.
@@ -259,6 +277,56 @@ namespace FirebaseAdmin.Messaging
         {
             [Newtonsoft.Json.JsonProperty("name")]
             public string Name { get; set; }
+        }
+
+        internal class FcmErrorResponse
+        {
+            [Newtonsoft.Json.JsonProperty("error")]
+            public Error Error { get; set; }
+
+            public string Code
+            {
+                get
+                {
+                    if (this.Error == null)
+                    {
+                        return null;
+                    }
+
+                    var details = this.Error.Details ?? new List<ErrorDetail>();
+                    var match = details.FirstOrDefault(detail => detail.Type == FcmErrorType);
+                    return match?.ErrorCode ?? this.Error.Status;
+                }
+            }
+
+            public string Message
+            {
+                get
+                {
+                    return this.Error?.Message;
+                }
+            }
+        }
+
+        internal class Error
+        {
+            [Newtonsoft.Json.JsonProperty("status")]
+            public string Status { get; set; }
+
+            [Newtonsoft.Json.JsonProperty("message")]
+            public string Message { get; set; }
+
+            [Newtonsoft.Json.JsonProperty("details")]
+            public IList<ErrorDetail> Details { get; set; }
+        }
+
+        internal class ErrorDetail
+        {
+            [Newtonsoft.Json.JsonProperty("@type")]
+            public string Type { get; set; }
+
+            [Newtonsoft.Json.JsonProperty("errorCode")]
+            public string ErrorCode { get; set; }
         }
 
         private sealed class FCMClientService : BaseClientService

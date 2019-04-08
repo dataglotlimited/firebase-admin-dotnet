@@ -15,6 +15,7 @@
 using System;
 using System.Collections.Generic;
 using System.Net.Http;
+using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -152,6 +153,40 @@ namespace FirebaseAdmin
             }
 
             return copy;
+        }
+
+        public static FirebaseException ToFirebaseException(this HttpRequestException exception, string message)
+        {
+            var notFound = new List<SocketError>()
+            {
+                SocketError.HostDown,
+                SocketError.HostNotFound,
+                SocketError.HostUnreachable,
+                SocketError.NetworkDown,
+                SocketError.NetworkUnreachable,
+            };
+
+            var inner = exception.InnerException;
+            var socketErrorCode = (inner as SocketException)?.SocketErrorCode ?? SocketError.SocketError;
+            if (socketErrorCode == SocketError.TimedOut)
+            {
+                return new FirebaseException(
+                    ErrorCode.DeadlineExceeded,
+                    $"{message} Remote service call timed out: {exception.Message}",
+                    exception);
+            }
+            else if (notFound.Contains(socketErrorCode))
+            {
+                return new FirebaseException(
+                    ErrorCode.Unavailable,
+                    $"${message} Failed to establish connection: {exception.Message}",
+                    exception);
+            }
+
+            return new FirebaseException(
+                ErrorCode.Unknown,
+                $"${message} Unknown error: {exception.Message}",
+                exception);
         }
     }
 }

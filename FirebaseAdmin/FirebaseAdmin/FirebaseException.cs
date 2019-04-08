@@ -13,18 +13,38 @@
 // limitations under the License.
 
 using System;
+using System.Net.Http;
 
 namespace FirebaseAdmin
 {
     /// <summary>
     /// Common error type for all exceptions raised by Firebase APIs.
     /// </summary>
-    public sealed class FirebaseException : Exception
+    public class FirebaseException : Exception
     {
-        internal FirebaseException(string message)
-        : base(message) { }
+        internal FirebaseException(string message, Exception inner = null)
+        : this(ErrorCode.Unknown, message, inner) { }
 
-        internal FirebaseException(string message, Exception inner)
-        : base(message, inner) { }
+        internal FirebaseException(
+            ErrorCode errorCode,
+            string message,
+            Exception inner = null,
+            HttpResponseMessage response = null)
+        : base(message, inner)
+        {
+            this.ErrorCode = errorCode;
+            this.HttpResponse = response;
+        }
+
+        /// <summary>
+        /// Gets the error code associated with this exception.
+        /// </summary>
+        public ErrorCode ErrorCode { get; private set; }
+
+        /// <summary>
+        /// Gets the <c>HttpResponseMessage</c> that resulted in this exception. Returns null
+        /// if the exception originated locally.
+        /// </summary>
+        public HttpResponseMessage HttpResponse { get; private set; }
     }
 }
