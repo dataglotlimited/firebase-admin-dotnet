@@ -33,9 +33,9 @@ namespace FirebaseAdmin.Messaging.Tests
         public void NoProjectId()
         {
             var clientFactory = new HttpClientFactory();
-            Assert.Throws<FirebaseException>(
+            Assert.Throws<ArgumentException>(
                 () => new FirebaseMessagingClient(clientFactory, MockCredential, null));
-            Assert.Throws<FirebaseException>(
+            Assert.Throws<ArgumentException>(
                 () => new FirebaseMessagingClient(clientFactory, MockCredential, string.Empty));
         }
 
@@ -291,7 +291,7 @@ Vary: Referer
             {
                 Topic = "test-topic",
             };
-            var ex = await Assert.ThrowsAsync<FirebaseException>(
+            var ex = await Assert.ThrowsAsync<FirebaseMessagingException>(
                 async () => await client.SendAsync(message));
             Assert.Contains("not json", ex.Message);
             var req = JsonConvert.DeserializeObject<FirebaseMessagingClient.SendRequest>(

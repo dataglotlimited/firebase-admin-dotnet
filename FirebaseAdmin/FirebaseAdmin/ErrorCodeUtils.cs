@@ -19,5 +19,15 @@ namespace FirebaseAdmin
 
             return ErrorCode.Unknown;
         }
+
+        internal static ErrorCode FromHttpStatus(int code)
+        {
+            if (code == 400)
+            {
+                return ErrorCode.InvalidArgument;
+            }
+
+            return ErrorCode.Unknown;
+        }
     }
 }

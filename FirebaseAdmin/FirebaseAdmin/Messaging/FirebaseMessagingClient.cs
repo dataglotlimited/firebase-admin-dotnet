@@ -50,7 +50,7 @@ namespace FirebaseAdmin.Messaging
         {
             if (string.IsNullOrEmpty(projectId))
             {
-                throw new FirebaseException(
+                throw new ArgumentException(
                     "Project ID is required to access messaging service. Use a service account "
                     + "credential or set the project ID explicitly via AppOptions. Alternatively "
                     + "you can set the project ID via the GOOGLE_CLOUD_PROJECT environment "
@@ -83,7 +83,7 @@ namespace FirebaseAdmin.Messaging
         /// <exception cref="ArgumentNullException">If the message argument is null.</exception>
         /// <exception cref="ArgumentException">If the message contains any invalid
         /// fields.</exception>
-        /// <exception cref="FirebaseException">If an error occurs while sending the
+        /// <exception cref="FirebaseMessagingException">If an error occurs while sending the
         /// message.</exception>
         /// <param name="message">The message to be sent. Must not be null.</param>
         /// <param name="dryRun">A boolean indicating whether to perform a dry run (validation
@@ -115,7 +115,8 @@ namespace FirebaseAdmin.Messaging
             }
             catch (HttpRequestException e)
             {
-                throw e.ToFirebaseException("Error while calling the FCM service.");
+                var fireException = e.ToFirebaseException("Error while calling the FCM service.");
+                throw new FirebaseMessagingException(fireException);
             }
         }
 
@@ -155,7 +156,8 @@ namespace FirebaseAdmin.Messaging
             }
             catch (HttpRequestException e)
             {
-                throw new FirebaseException("Error while calling the FCM service.", e);
+                var fireException = e.ToFirebaseException("Error while calling the FCM service.");
+                throw new FirebaseMessagingException(fireException);
             }
         }
 
@@ -170,9 +172,13 @@ namespace FirebaseAdmin.Messaging
             request.Headers.Add("X-GOOG-API-FORMAT-VERSION", "2");
         }
 
-        private static FirebaseException CreateExceptionFor(RequestError requestError)
+        private static FirebaseMessagingException CreateExceptionFor(
+            RequestError requestError, HttpResponseMessage response)
         {
-            return new FirebaseException(requestError.ToString());
+            return new FirebaseMessagingException(
+                ErrorCodeUtils.FromHttpStatus(requestError.Code),
+                requestError.Message,
+                response: response);
         }
 
         private async Task<HttpResponseMessage> SendRequestAsync(object body, CancellationToken cancellationToken)
@@ -201,7 +207,7 @@ namespace FirebaseAdmin.Messaging
                 {
                     if (error != null)
                     {
-                        responses.Add(SendResponse.FromException(CreateExceptionFor(error)));
+                        responses.Add(SendResponse.FromException(CreateExceptionFor(error, message)));
                     }
                     else if (content != null)
                     {
@@ -209,8 +215,11 @@ namespace FirebaseAdmin.Messaging
                     }
                     else
                     {
-                        responses.Add(SendResponse.FromException(new FirebaseException(
-                            $"Unexpected batch response. Response status code was {message.StatusCode}.")));
+                        var exception = new FirebaseMessagingException(
+                            ErrorCode.Unknown,
+                            $"Unexpected batch response. Response status code was {message.StatusCode}.",
+                            response: message);
+                        responses.Add(SendResponse.FromException(exception));
                     }
                 });
 
@@ -244,14 +253,14 @@ namespace FirebaseAdmin.Messaging
             {
                 var parsed = JsonConvert.DeserializeObject<FcmErrorResponse>(json);
                 var code = ErrorCodeUtils.FromString(parsed.Code);
-                throw new FirebaseException(
+                throw new FirebaseMessagingException(
                     code,
                     $"Error while invoking FCM service: {parsed.Message}",
                     response: response);
             }
-            catch (Exception e) when (e.GetType() != typeof(FirebaseException))
+            catch (Exception e) when (e.GetType() != typeof(FirebaseMessagingException))
             {
-                throw new FirebaseException(
+                throw new FirebaseMessagingException(
                     ErrorCode.Unknown, $"Unexpected response: {json}", response: response);
             }
         }
